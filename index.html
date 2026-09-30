@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Khon Kaen AgriBot Voice</title>
+  <style>
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      min-height:100vh;
+      display:grid;
+      place-items:center;
+      font-family:system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;
+      background:
+        radial-gradient(circle at 15% 0%,rgba(34,197,94,.18),transparent 30%),
+        linear-gradient(145deg,#eef4ff,#f7fbff 48%,#effcf4);
+      color:#18223a;
+    }
+    .card{
+      width:min(92vw,390px);
+      background:#fff;
+      border:1px solid #dbe5f2;
+      border-radius:28px;
+      padding:24px;
+      box-shadow:0 28px 70px rgba(15,23,42,.17);
+      text-align:center;
+    }
+    .bot{
+      width:76px;height:76px;border-radius:24px;
+      display:grid;place-items:center;margin:0 auto 12px;
+      background:linear-gradient(135deg,#4f46e5,#0891b2);
+      font-size:34px;box-shadow:0 12px 28px rgba(79,70,229,.22);
+    }
+    h1{font-size:20px;margin:4px 0}
+    .sub{font-size:12px;color:#64748b;margin-bottom:18px}
+    .mic{
+      width:104px;height:104px;border:0;border-radius:50%;
+      cursor:pointer;color:#fff;font-size:40px;
+      background:linear-gradient(135deg,#16a34a,#0ea5e9,#6d28d9);
+      box-shadow:0 18px 38px rgba(14,165,233,.23);
+      transition:.18s ease;
+    }
+    .mic.listening{animation:pulse 1s ease-in-out infinite}
+    @keyframes pulse{50%{transform:scale(1.07)}}
+    .status{font-weight:800;margin:16px 0 8px}
+    .transcript{
+      min-height:96px;text-align:left;padding:12px 14px;
+      border:1px solid #dce4f2;border-radius:16px;background:#f8faff;
+      font-size:14px;line-height:1.55;color:#25324b;
+    }
+    .actions{display:flex;gap:8px;margin-top:14px}
+    button.small{
+      flex:1;height:42px;border-radius:13px;border:1px solid #d7deeb;
+      background:#fff;color:#334155;font-weight:800;cursor:pointer;
+    }
+    button.send{
+      border:0;color:#fff;
+      background:linear-gradient(135deg,#4f46e5,#0891b2);
+    }
+    .hint{font-size:10.5px;color:#7b879b;margin-top:12px;line-height:1.45}
+    .error{color:#b45309}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="bot">🌱</div>
+    <h1>Khon Kaen AgriBot Voice</h1>
+    <div class="sub">พูดคำถาม แล้วระบบจะส่งกลับไปยัง Dashboard</div>
+
+    <button class="mic" id="micBtn" type="button" aria-label="เริ่มพูด">🎤</button>
+    <div class="status" id="status">กดไมโครโฟนเพื่อเริ่มพูด</div>
+    <div class="transcript" id="transcript">คำถามจะปรากฏตรงนี้</div>
+
+    <div class="actions">
+      <button class="small" id="cancelBtn" type="button">ยกเลิก</button>
+      <button class="small send" id="sendBtn" type="button">ส่งคำถาม</button>
+    </div>
+
+    <div class="hint">
+      ครั้งแรกเบราว์เซอร์จะถามสิทธิ์ไมโครโฟน ให้กด Allow / อนุญาต
+    </div>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    let recognition = null;
+    let finalText = '';
+    let listening = false;
+
+    function notify(type, payload={}){
+      if(window.opener && !window.opener.closed){
+        window.opener.postMessage({type, ...payload}, '*');
+      }
+    }
+
+    function setListening(v){
+      listening = !!v;
+      $('micBtn').classList.toggle('listening',listening);
+      $('micBtn').textContent = listening ? '◼' : '🎤';
+    }
+
+    function start(){
+      if(!SR){
+        $('status').textContent='เบราว์เซอร์นี้ไม่รองรับการรับเสียง';
+        $('status').classList.add('error');
+        notify('AGRIBOT_VOICE_ERROR',{message:'เบราว์เซอร์นี้ไม่รองรับการรับเสียง แนะนำ Google Chrome'});
+        return;
+      }
+
+      recognition = recognition || new SR();
+      recognition.lang = 'th-TH';
+      recognition.interimResults = true;
+      recognition.continuous = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = ()=>{
+        finalText='';
+        setListening(true);
+        $('status').textContent='กำลังฟัง…';
+        $('transcript').textContent='';
+      };
+
+      recognition.onresult = event=>{
+        let interim='';
+        let completed='';
+
+        for(let i=event.resultIndex;i<event.results.length;i++){
+          const t=event.results[i][0].transcript;
+          if(event.results[i].isFinal) completed += t;
+          else interim += t;
+        }
+
+        if(completed) finalText += completed;
+        $('transcript').textContent=(finalText+' '+interim).trim() || 'กำลังฟัง…';
+      };
+
+      recognition.onerror = event=>{
+        setListening(false);
+        let message='ไม่สามารถรับเสียงได้';
+        if(event.error==='not-allowed') message='กรุณาอนุญาตการใช้ไมโครโฟน แล้วลองอีกครั้ง';
+        if(event.error==='no-speech') message='ไม่ได้ยินเสียงพูด ลองอีกครั้ง';
+        $('status').textContent=message;
+        $('status').classList.add('error');
+        notify('AGRIBOT_VOICE_ERROR',{message});
+      };
+
+      recognition.onend = ()=>{
+        setListening(false);
+        if(finalText.trim()){
+          $('status').textContent='ได้ยินแล้ว กำลังส่งคำถาม…';
+          setTimeout(()=>{
+            notify('AGRIBOT_VOICE_RESULT',{text:finalText.trim()});
+            window.close();
+          },450);
+        }else if(!$('status').classList.contains('error')){
+          $('status').textContent='กดไมโครโฟนเพื่อพูดใหม่';
+        }
+      };
+
+      try{
+        $('status').classList.remove('error');
+        recognition.start();
+      }catch(e){}
+    }
+
+    $('micBtn').addEventListener('click',()=>{
+      if(listening){
+        try{recognition.stop()}catch(e){}
+      }else{
+        start();
+      }
+    });
+
+    $('sendBtn').addEventListener('click',()=>{
+      const text=String(finalText || $('transcript').textContent || '').trim();
+      if(!text || text==='คำถามจะปรากฏตรงนี้' || text==='กำลังฟัง…') return;
+      notify('AGRIBOT_VOICE_RESULT',{text});
+      window.close();
+    });
+
+    $('cancelBtn').addEventListener('click',()=>{
+      notify('AGRIBOT_VOICE_CANCEL');
+      window.close();
+    });
+
+    window.addEventListener('beforeunload',()=>{
+      if(!finalText) notify('AGRIBOT_VOICE_CANCEL');
+    });
+  </script>
+</body>
+</html>
